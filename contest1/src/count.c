@@ -18,10 +18,8 @@
 
 */
 
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 enum State { EXIT, ANY, STRING, COMMENT_1, COMMENT_2, COMMENT_3 };
 
@@ -91,5 +89,13 @@ int main(int argc, char *argv[]) {
         printf("%d ", counters[i]);
     }
 
+    free(text);
+
     return 0;
 }
+
+/**
+ * @complexity O(N)
+ *
+ * @memory 1048576 = 1 мб
+ */

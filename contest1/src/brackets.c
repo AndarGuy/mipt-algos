@@ -15,10 +15,11 @@
 */
 
 #include <assert.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define INITIAL_SIZE 1
 
 struct stack {
     size_t top;
@@ -89,7 +90,6 @@ struct stack *stack_delete(struct stack *st);
 
 struct stack *stack_new(size_t elem_size) {
     assert(elem_size);
-    const int INITIAL_SIZE = 1;
     struct stack *st = malloc(sizeof(struct stack));
     st->capacity = INITIAL_SIZE;
     st->top = 0;
@@ -102,8 +102,11 @@ int stack_push(struct stack *st, const void *elem) {
     assert(st);
     assert(elem);
     if (st->top >= st->capacity) {
-        void *pointer = realloc(st->elems, st->elem_size * (st->capacity *= 2));
-        if (!pointer) return 1;
+        st->capacity *= 2;
+        void *pointer = realloc(st->elems, st->elem_size * st->capacity);
+        if (!pointer) {
+            return 1;
+        }
         st->elems = pointer;
     }
     memcpy(st->elems + st->top * st->elem_size, elem, st->elem_size);
@@ -114,7 +117,9 @@ int stack_push(struct stack *st, const void *elem) {
 int stack_pop(struct stack *st, void *elem) {
     assert(st);
     assert(elem);
-    if (stack_empty(st)) return 1;
+    if (stack_empty(st)) {
+        return 1;
+    }
     stack_top(st, elem);
     st->top--;
     return 0;
@@ -123,7 +128,9 @@ int stack_pop(struct stack *st, void *elem) {
 int stack_top(struct stack *st, void *elem) {
     assert(st);
     assert(elem);
-    if (stack_empty(st)) return 1;
+    if (stack_empty(st)) {
+        return 1;
+    }
     memcpy(elem, st->elems + (st->top - 1) * st->elem_size, st->elem_size);
     return 0;
 }
@@ -131,6 +138,13 @@ int stack_top(struct stack *st, void *elem) {
 int stack_empty(struct stack const *st) {
     assert(st);
     return st->top == 0;
+}
+
+struct stack *stack_delete(struct stack *st) {
+    assert(st);
+    free(st->elems);
+    free(st);
+    return NULL;
 }
 
 char get_pair(char bracket) {
@@ -156,7 +170,9 @@ int main(int argc, char *argv[]) {
             stack_push(brackets, &bracket);
         } else {
             char pair = get_pair(bracket);
-            if (pair == '\0') continue;
+            if (pair == '\0') {
+                continue;
+            }
             if (brackets->top == 0) {
                 printf("NO");
                 return 0;
@@ -170,10 +186,19 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (brackets->top == 0)
+    if (brackets->top == 0) {
         printf("YES");
-    else
+    } else {
         printf("NO");
+    }
+
+    brackets = stack_delete(brackets);
 
     return 0;
 }
+
+/**
+ * @complexity O(N)
+ *
+ * @memory N
+ */
