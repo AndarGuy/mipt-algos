@@ -18,134 +18,82 @@
 
 */
 
-#include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define ALPHABET 26
-
-int get_bit(int combination, unsigned int bit) {
-    return combination & (1 << bit);
-}
-
-int get_target(char *letters, unsigned int *mask, int *target) {
-    // ищем первое необработанное повторение
-    for (size_t i = 0; i < ALPHABET; i++) {
-        if (letters[i] > 1) {
-            *target = i;
-            // printf("Необработанное повторение: %c\n", 'a' + i);
-            *mask |= (1 << i);
-            return 1;
+/**
+ * @brief Вывод всевозможных перестановок массива символов
+ *
+ * @param letters Массив символов
+ * @param valve Хранилище текущей перестановки
+ * @param depth Номер фиксируемого элемента
+ * @param length Длина массива символов
+ * @param duplicates Словарь повторяющихся символов
+ * @param elements Размер текущей перестановки
+ */
+void subsets(char *letters, char *valve, int depth, int length,
+             char *duplicates, int elements) {
+    if (depth + 1 == length) {
+        for (size_t i = 0; i < elements; i++) {
+            printf("%c", valve[i]);
         }
+        printf("\n");
+        return;
     }
-    return 0;
-}
 
-void get_subsets(char *letters, unsigned int mask) {
-    // перебираем варианты по маске
-    for (int combination = mask; combination < 0x4000000; combination++) {
-        combination |= mask;
-        // printf("%d\n", combination);
-        int printed = 0;
-        for (char k = 0; k < ALPHABET + 1; k++) {
-            if (get_bit(combination, k)) {
-                for (size_t l = 0; l < letters[(int)k]; l++) {
-                    printf("%c", 'a' + k);
-                    printed = 1;
-                }
-            }
-        }
-        if (printed) printf("\n");
-    }
-}
+    char dublicated = duplicates[(int)letters[depth]];
 
-int get_dub(char *letters, unsigned int *mask, int *target) {
-    // ищем любое повторение, кроме выбранного выше
-    for (size_t i = 0; i < 26; i++) {
-        // если нашли, то уменьшаем его на 1 и добавляем в маску,
-        // как обязательное
-        if (*target != i && letters[i] > 1) {
-            // printf("Уменьшаем %c на 1\n", i + 'a');
-            letters[i]--;
-            *mask |= (1 << i);
-            return 1;
-        }
+    subsets(letters, valve, depth + dublicated, length, duplicates, elements);
+
+    for (size_t i = 1; i < dublicated + 1; i++) {
+        valve[elements + i - 1] = letters[depth + i - 1];
+        subsets(letters, valve, depth + dublicated, length, duplicates,
+                elements + i);
     }
-    return 0;
 }
 
 int main(int argc, char *argv[]) {
-    char *letters = calloc(32, sizeof(char));
+    /**
+     * @brief letters - массив символов, valve - хранилище текущей перестановки
+     *
+     */
+    char *letters = calloc(1024, sizeof(char)),
+         *valve = calloc(1024, sizeof(char));
 
-    char letter;
-    while ('\n' != (letter = getc(stdin))) {
-        letters[letter - 'a']++;
+    /**
+     * @brief Словарь повторяющихся символов
+     *
+     */
+    char *duplicates = calloc(127, sizeof(char));
+
+    fgets(letters, 1024, stdin);
+
+    int length = strlen(letters);
+    for (size_t i = 0; i < length; i++) {
+        duplicates[(int)letters[i]]++;
     }
 
-    char *letters_copy = calloc(32, sizeof(char));
-    memcpy(letters_copy, letters, 32);
-
-    unsigned int default_mask = 0, mask;
-    for (size_t i = 0; i < 26; i++)
-        if (!letters[i]) default_mask += (1 << i);
-    mask = default_mask;
-
-    int done = 0;
-    int found;
-
-    // обработка повторения
-    int target = -1;
-    int dub = -1;
-
-    printf("\n");
-
-    while (!done) {
-        done = 1;
-
-        // перебираем варианты по маске
-        get_subsets(letters_copy, mask);
-
-        while (true) {
-            if (target < 0) {
-                found = get_target(letters, &mask, &target);
-                if (!found) {
-                    done = true;
-                    break;
-                }
-            }
-
-            done = false;
-
-            if (dub != -1 && letters_copy[dub] != 0) {
-                letters_copy[dub]--;
-                break;
-            }
-
-            found = get_dub(letters_copy, &mask, &target);
-
-            if (found) break;
-
-            if (letters[target] == 1) {
-                letters[target] = 0;
-                default_mask |= (1 << target);
-                mask = default_mask;
-                target = -1;
-                memcpy(letters_copy, letters, 32);
-                continue;
-            } else {
-                // printf(
-                //     "Повторений главного элемента не найдено, уменьшаем на 1
-                //     и " "восстанавливаем массив.\n");
-                letters[target]--;
-                memcpy(letters_copy, letters, 32);
-                mask = default_mask;
-                mask |= (1 << target);
-                break;
-            }
+    int counter = 0;
+    for (size_t i = '0'; i < 'z' + 1; i++) {
+        for (size_t j = 0; j < duplicates[i]; j++) {
+            letters[counter] = i;
+            counter++;
         }
     }
 
+    subsets(letters, valve, 0, length, duplicates, 0);
+
+    free(letters);
+    free(valve);
+    free(duplicates);
+
     return 0;
 }
+
+/**
+ * @complexity O(2^N + N)
+ *
+ * @memory 1024 + 1024 + 255 = 2,25 кб
+ */
