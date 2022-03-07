@@ -14,6 +14,7 @@ CFLAGS=-Wall
 .SILENT:
 
 all: ${SRCS}
+	mkdir -p ${MODULES_DIR}
 	mkdir -p ${OBJ_DIR}
 	for src in ${SRCS}; do \
 	obj=$${src/".c"/""}; \
