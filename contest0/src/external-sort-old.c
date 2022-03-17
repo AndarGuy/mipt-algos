@@ -13,7 +13,69 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-// #include <time.h>
+#include <time.h>
+
+typedef struct stack {
+    size_t top;
+    size_t bottom;
+    size_t capacity;
+    size_t elem_size;
+    void *elems;
+} Stack;
+
+struct stack *stack_new(size_t elem_size) {
+    assert(elem_size);
+    const int INITIAL_SIZE = 1;
+    struct stack *st = malloc(sizeof(struct stack));
+    st->capacity = INITIAL_SIZE;
+    st->top = 0;
+    st->bottom = 0;
+    st->elem_size = elem_size;
+    st->elems = calloc(INITIAL_SIZE, elem_size);
+    return st;
+}
+
+int stack_push(struct stack *st, const void *elem) {
+    assert(st);
+    assert(elem);
+    if (st->top >= st->capacity) {
+        void *pointer = realloc(st->elems, st->elem_size * (st->capacity *= 2));
+        if (!pointer) return 1;
+        st->elems = pointer;
+    }
+    memcpy(st->elems + st->top * st->elem_size, elem, st->elem_size);
+    st->top++;
+    return 0;
+}
+
+int stack_empty(struct stack const *st) {
+    assert(st);
+    return st->top == 0;
+}
+
+int stack_top(struct stack *st, void *elem) {
+    assert(st);
+    assert(elem);
+    if (stack_empty(st)) return 1;
+    memcpy(elem, st->elems + (st->top - 1) * st->elem_size, st->elem_size);
+    return 0;
+}
+
+int stack_pop(struct stack *st, void *elem) {
+    assert(st);
+    assert(elem);
+    if (stack_empty(st)) return 1;
+    stack_top(st, elem);
+    st->top--;
+    return 0;
+}
+
+struct stack *stack_delete(struct stack *st) {
+    assert(st);
+    free(st->elems);
+    free(st);
+    return NULL;
+}
 
 // --------------------------------------------------------- //
 
@@ -126,6 +188,10 @@ void heap_sift_down(Heap *heap, size_t index) {
 
 #define LINE_SIZE 10001
 
+char buffer_fn[64];
+
+FILE *storages[10];
+
 int comparator(const void *s1, const void *s2) {
     return strcmp((const char *)s1, (const char *)s2);
 }
@@ -134,125 +200,113 @@ int heap_formatter(void *a, void *b) {
     return strcmp(*((const char **)b), *((const char **)a));
 }
 
-char filename[64];
-char *get_file(char *type, size_t number) {
-    sprintf(filename, "%s%zu.txt", type, number);
-    return filename;
+char *get_storage_filename(size_t chunk) {
+    sprintf(buffer_fn, "chunk%zu.txt", chunk);
+    return buffer_fn;
 }
 
-void chunk_sort(FILE *where, size_t chunk_capacity, size_t files_limit,
-                void *buffer) {
-    FILE **storages = malloc(files_limit * sizeof(FILE *));
-    for (size_t file = 0; file < files_limit; file++) {
-        storages[file] = fopen(get_file("chunk", file), "w");
-    }
-
-    for (size_t chunk = 0; !feof(where); chunk++) {
-        size_t line;
-        for (line = 0; line < chunk_capacity; line++) {
-            if (!fgets(buffer + line * LINE_SIZE, LINE_SIZE, where)) break;
-        }
-        size_t lines = line;
-
-        qsort(buffer, lines, LINE_SIZE * sizeof(char), comparator);
-
-        for (line = 0; line < lines; line++) {
-            fputs(buffer + line * LINE_SIZE, storages[chunk % files_limit]);
-        }
-    }
-
-    for (size_t file = 0; file < files_limit; file++) {
-        fclose(storages[file]);
-    }
-
-    free(storages);
+FILE *get_storage(size_t chunk, char *mode) {
+    FILE *file = fopen(get_storage_filename(chunk), mode);
+    return file;
 }
 
-size_t merge_series(size_t series_size, size_t files_limit, void *buffer) {
-    FILE **storages = malloc(files_limit * sizeof(FILE *)),
-         **outputs = malloc(files_limit * sizeof(FILE *));
+size_t merge(size_t *chunks, size_t size, void *buffer) {
+    struct HeapData {
+        char *line;
+        size_t chunk;
+    };
 
-    Heap *heap = heap_create(sizeof(char *), files_limit, heap_formatter);
+    Heap *heap = heap_create(sizeof(struct HeapData), size, heap_formatter);
 
-    for (size_t file = 0; file < files_limit; file++) {
-        storages[file] = fopen(get_file("chunk", file), "r");
-        outputs[file] = fopen(get_file("temp", file), "w");
+    for (size_t i = 0; i < size; i++) {
+        storages[i] = get_storage(chunks[i], "r");
+        struct HeapData data = {buffer + i * LINE_SIZE, i};
+        if (fgets(buffer + i * LINE_SIZE, LINE_SIZE, storages[i]) != NULL)
+            heap_insert(heap, &data);
     }
+    FILE *temp = fopen("temp.txt", "w");
 
-    size_t *cursors = malloc(files_limit * sizeof(size_t));
-    size_t files_used = 0;
-    for (size_t series = 0; true; series++) {
-        heap->size = 0;
-        for (size_t series = 0; series < files_limit; series++) {
-            char *line = buffer + series * LINE_SIZE;
-            if (fgets(line, LINE_SIZE, storages[series]) != NULL) {
-                heap_insert(heap, &line);
-                cursors[series] = 1;
-            }
-        }
-        if (heap->size == 0) break;
-        files_used = files_used > heap->size ? files_used : heap->size;
-        while (heap->size > 0) {
-            char *line;
-            heap_pop(heap, &line);
-            fputs(line, outputs[series % files_limit]);
-            size_t chunk = (line - (char *)buffer) / LINE_SIZE;
-            if (cursors[chunk] < series_size &&
-                fgets(line, LINE_SIZE, storages[chunk]) != NULL) {
-                heap_insert(heap, &line);
-                cursors[chunk]++;
-            }
+    while (heap->size > 0) {
+        struct HeapData data;
+        heap_pop(heap, &data);
+        fputs(data.line, temp);
+        if (!feof(storages[data.chunk]) &&
+            fgets(data.line, LINE_SIZE, storages[data.chunk]) != NULL) {
+            heap_insert(heap, &data);
         }
     }
 
-    for (size_t i = 0; i < files_limit; i++) {
+    for (size_t i = 0; i < size; i++) {
         fclose(storages[i]);
-        fclose(outputs[i]);
-        char *chunk_filename = malloc(64);
-        strcpy(chunk_filename, get_file("chunk", i));
-        rename(get_file("temp", i), chunk_filename);
-        free(chunk_filename);
+        remove(get_storage_filename(chunks[i]));
     }
 
+    fclose(temp);
     heap_destroy(heap);
-    free(cursors);
-    free(storages);
-    free(outputs);
 
-    return files_used;
+    rename("temp.txt", get_storage_filename(chunks[0]));
+
+    return chunks[0];
 }
 
 void extern_sort() {
     FILE *input = fopen("input.txt", "r");
 
-    const size_t memory_limit = 250 * 1024, files_limit = 10;
+    const size_t memory_limit = 250 * 1024;
     // const char character_from = '!', character_to = '~';
     const size_t chunk_capacity = memory_limit / LINE_SIZE;
+    const size_t merge_threshold = chunk_capacity / 2;
 
+    Stack *stack = stack_new(sizeof(size_t));
     char *buffer = calloc(memory_limit, sizeof(char));
+    size_t levels[5] = {0};
+    for (size_t i = 0; !feof(input); i++) {
+        size_t chunk = stack->top;
+        // printf("%zu\n", chunk);
+        size_t line;
+        for (line = 0; line < chunk_capacity; line++) {
+            if (!fgets(buffer + line * LINE_SIZE, LINE_SIZE, input)) break;
+        }
+        size_t lines = line;
+        qsort(buffer, lines, LINE_SIZE * sizeof(char), comparator);
 
-    // printf("--- EXTERNAL SORT ---\n");
-    // printf("Memory Limit - %zu B\n", memory_limit);
-    // printf("Chunk Capacity - %zu\n", chunk_capacity);
-    // printf("Using Files - %zu\n", files_limit);
+        FILE *temp = get_storage(chunk, "w");
+        for (line = 0; line < lines; line++) {
+            fputs(buffer + line * LINE_SIZE, temp);
+        }
+        fclose(temp);
 
-    chunk_sort(input, chunk_capacity, files_limit, buffer);
+        stack_push(stack, &chunk);
+        levels[0]++;
 
-    for (size_t files_used = files_limit, series_size = chunk_capacity;
-         files_used > 1; series_size *= files_used) {
-        files_used = merge_series(series_size, files_used, buffer);
+        for (size_t i = 0; i < 5; i++) {
+            if (levels[i] == merge_threshold) {
+                stack->top -= merge_threshold;
+                size_t merged =
+                    merge(stack->elems + stack->top * stack->elem_size,
+                          merge_threshold, buffer);
+                stack_push(stack, &merged);
+                levels[i + 1]++;
+                levels[i] = 0;
+            }
+        }
     }
 
-    rename("chunk0.txt", "output.txt");
+    size_t merged = merge(stack->elems, stack->top, buffer);
+
+    rename(get_storage_filename(merged), "output.txt");
+
+    free(buffer);
+    fclose(input);
+    stack_delete(stack);
 }
 
 int main() {
-    // clock_t timer = clock();
+    clock_t timer = clock();
 
     extern_sort();
 
-    // printf("Time taken: %.4fs\n", (double)(clock() - timer) /
-    // CLOCKS_PER_SEC);
+    printf("Time taken: %.4fs\n", (double)(clock() - timer) / CLOCKS_PER_SEC);
 
     return 0;
 }
