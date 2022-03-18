@@ -137,6 +137,8 @@ int vector_resize(struct vector *v, size_t new_size);
 
 int vector_empty(struct vector const *v);
 
+int vector_contains(struct vector *v, const void *);
+
 void vector_print(struct vector const *v, void (*pf)(void const *v));
 
 struct vector *vector_delete(struct vector *v);
@@ -183,6 +185,11 @@ int vector_resize(struct vector *v, size_t new_size) {
     return 0;
 }
 
+int vector_contains(struct vector *v, const void *what) {
+    void *diff = what - v->elems;
+    return diff >= 0 && diff <= v->elems + v->size * v->elem_size;
+}
+
 int vector_pop(struct vector *v, void *elem) {
     assert(v);
     assert(elem);
@@ -214,6 +221,13 @@ struct vector *vector_delete(struct vector *v) {
 
 // --------------------------------------------------------- //
 
+typedef struct _entry {
+    size_t data;
+    unsigned weight;
+    struct _entry *left;
+    struct _entry *right;
+} Entry;
+
 int heap_formatter(void *a, void *b) {
     return (*((Entry **)a))->weight - (*((Entry **)b))->weight;
 }
@@ -236,13 +250,6 @@ unsigned *count_chunks(const char *text_buffer, size_t text_size,
 char *compress(const char *text_buffer, size_t text_size,
                size_t *compressed_size) {
     size_t chunk_size = 1, chunk_capacity = 1 << (chunk_size << 3);
-
-    typedef struct _entry {
-        size_t data;
-        unsigned weight;
-        struct _entry *left;
-        struct _entry *right;
-    } Entry;
 
     Vector *vector = vector_new(1, sizeof(Entry));
     unsigned *chunks =
