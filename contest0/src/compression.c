@@ -186,8 +186,8 @@ int vector_resize(struct vector *v, size_t new_size) {
 }
 
 int vector_contains(struct vector *v, const void *what) {
-    void *diff = what - v->elems;
-    return diff >= 0 && diff <= v->elems + v->size * v->elem_size;
+    size_t diff = what - v->elems;
+    return diff >= 0 && diff <= v->size * v->elem_size;
 }
 
 int vector_pop(struct vector *v, void *elem) {
@@ -221,22 +221,96 @@ struct vector *vector_delete(struct vector *v) {
 
 // --------------------------------------------------------- //
 
+struct set *set_new(size_t capacity);
+
+int set_insert(struct set *s, size_t elem);
+
+int set_erase(struct set *s, size_t elem);
+
+int set_find(struct set const *s, size_t elem);
+
+struct set *set_delete(struct set *s);
+
+int set_empty(struct set const *s);
+
+ssize_t set_findfirst(struct set const *s, size_t start);
+
+size_t set_size(struct set const *s);
+
+typedef struct set {
+    char *array;
+    size_t capacity;
+} Set;
+
+struct set *set_new(size_t capacity) {
+    struct set *s = (struct set *)malloc(sizeof(struct set));
+    s->capacity = capacity;
+    s->array = (char *)calloc(s->capacity / 8 + 1, sizeof(char));
+    return s;
+}
+
+int set_insert(struct set *s, size_t elem) {
+    if (elem >= s->capacity) return 1;
+    s->array[elem / 8] |= (1 << (elem % 8));
+    return 0;
+}
+
+int set_erase(struct set *s, size_t elem) {
+    if (elem >= s->capacity) return 1;
+    s->array[elem / 8] &= (unsigned char)~((char)(1 << (elem % 8)));
+    return 0;
+}
+
+int set_find(struct set const *s, size_t elem) {
+    return s->array[elem / 8] & (1 << (elem % 8));
+}
+
+struct set *set_delete(struct set *s) {
+    free(s->array);
+    free(s);
+    return NULL;
+}
+
+int set_empty(struct set const *s) { return set_findfirst(s, 0) != -1; }
+
+ssize_t set_findfirst(struct set const *s, size_t start) {
+    for (int i = start; i < s->capacity; i++) {
+        if (set_find(s, i)) return i;
+    }
+    return -1;
+}
+
+size_t set_size(struct set const *s) {
+    size_t size = 0;
+    for (int i = 0; i < s->capacity; i++) {
+        if (set_find(s, i)) size++;
+    }
+
+    return size;
+}
+
+// --------------------------------------------------------- //
+
 typedef struct _entry {
-    size_t data;
     unsigned weight;
-    struct _entry *left;
-    struct _entry *right;
+    unsigned left;
+    unsigned right;
 } Entry;
 
+typedef struct _last_entry {
+    unsigned weight;
+    unsigned data;
+} LastEntry;
+
 int heap_formatter(void *a, void *b) {
-    return (*((Entry **)a))->weight - (*((Entry **)b))->weight;
+    return (*((Entry **)b))->weight - (*((Entry **)a))->weight;
 }
 
 unsigned *count_chunks(const char *text_buffer, size_t text_size,
                        size_t chunk_size, size_t chunk_capacity) {
     assert(chunk_size <= sizeof(size_t));
 
-    unsigned *valve = calloc(1 << (chunk_size << 3), sizeof(unsigned));
+    unsigned *valve = calloc(chunk_capacity, sizeof(unsigned));
 
     size_t data = 0;
     for (size_t chunk = 0; chunk < text_size; chunk += chunk_size) {
@@ -247,44 +321,111 @@ unsigned *count_chunks(const char *text_buffer, size_t text_size,
     return valve;
 }
 
+typedef struct _encode {
+    unsigned data;
+    Set *encoding;
+} Encode;
+
+void create_dictionary(Vector *dictionary, Vector *data, Entry *root,
+                       Set *encoding, unsigned length) {
+    if (vector_contains(data, root)) {
+        Set *encoded = set_new(length);
+        memcpy(encoded->array, encoding->array, length / 8 + 1);
+        Encode encode = {((void *)root) - data->elems, encoded};
+        vector_push(dictionary, &encode);
+        return;
+    }
+
+    set_erase(encoding, length);
+    create_dictionary(dictionary, data, root->left, encoding, length + 1);
+    set_insert(encoding, length);
+    create_dictionary(dictionary, data, root->right, encoding, length + 1);
+}
+
+Set *search_dictionary(Vector *dictionary, Vector *data, void *target) {
+    unsigned left = 0, right = vector_size(dictionary) - 1;
+
+    while (true) {
+        unsigned index = (left + right) / 2;
+        if (memcmp()) }
+}
+
 char *compress(const char *text_buffer, size_t text_size,
                size_t *compressed_size) {
+    printf("--- COMPRESSOR ---\n");
     size_t chunk_size = 1, chunk_capacity = 1 << (chunk_size << 3);
 
-    Vector *vector = vector_new(1, sizeof(Entry));
+    printf("Compressing string: %s\n", text_buffer);
+    printf("Chunk size: %zu\n", chunk_size);
+    printf("Alphabet size: %zu\n", chunk_capacity);
+    Vector *actual_data = vector_new(0, chunk_size);
+    Vector *last_entries = vector_new(0, sizeof(LastEntry));
     unsigned *chunks =
         count_chunks(text_buffer, text_size, chunk_size, chunk_capacity);
+    printf("Counting symbols...\n");
     for (size_t data = 0; data < chunk_capacity; data++) {
         if (!chunks[data]) continue;
-        Entry entry = {data, chunks[data], NULL, NULL};
-        vector_push(vector, &entry);
+        printf("• symbol '%c', occured %u times\n", (char)data, chunks[data]);
+        vector_push(actual_data, &data);
+        LastEntry entry = {chunks[data], vector_size(actual_data) - 1};
+        vector_push(last_entries, &entry);
     }
     free(chunks);
 
-    size_t actual_capacity = vector_size(vector);
+    size_t actual_capacity = vector_size(actual_data);
+    printf("Actual alphabet size: %zu\n", actual_capacity);
 
-    Heap *heap = heap_create(sizeof(Entry *), chunk_capacity, heap_formatter);
+    Heap *heap = heap_create(sizeof(void *), actual_capacity, heap_formatter);
     for (size_t index = 0; index < actual_capacity; index++) {
-        Entry *entry = vector->elems + index * vector->elem_size;
+        LastEntry *entry =
+            last_entries->elems + index * last_entries->elem_size;
+        printf("• entry data %u, weight %u\n", entry->data, entry->weight);
         heap_insert(heap, &entry);
     }
 
+    LastEntry *peek;
+    heap_peek(heap, &peek);
+    printf("Peek weight: %u\n", peek->weight);
+    printf("Peek data: %u\n", peek->data);
+
+    Vector *entries = vector_new(0, sizeof(Entry));
+    vector_resize(entries, vector_size(last_entries));
+    entries->size = 0;
+
     while (heap->size > 1) {
-        Entry *a, *b;
+        LastEntry *a, *b;
         heap_pop(heap, &a);
         heap_pop(heap, &b);
-        Entry new = {a->weight + b->weight, a, b};
-        vector_push(vector, &new);
+        Entry new;
+        new.weight = a->weight + b->weight;
+        new.left = vector_contains(last_entries, a)
+                       ? a->data
+                       : actual_capacity + ((((void *)a) - entries->elems) /
+                                            entries->elem_size);
+        new.right = vector_contains(last_entries, b)
+                        ? b->data
+                        : actual_capacity + ((((void *)b) - entries->elems) /
+                                             entries->elem_size);
+        printf("• merging entries: (%u, %u) and (%u, %u)\n", a->weight,
+               new.left, b->weight, new.right);
+        vector_push(entries, &new);
         Entry *in_vector =
-            vector->elems + (vector->size - 1) * vector->elem_size;
+            entries->elems + (entries->size - 1) * entries->elem_size;
         heap_insert(heap, &in_vector);
     }
+    vector_delete(last_entries);
 
     Entry *result;
-    heap_pop(heap, &result);
+    heap_peek(heap, &result);
+    heap_destroy(heap);
+
     printf("%u\n", result->weight);
 
-    return NULL;
+    Vector *encoding = vector_new(0, sizeof(Encode));
+
+    void *compressed = NULL;
+
+    return compressed;
 }
 
 // char *decompress(const char *compressed_data, size_t compressed_size,
