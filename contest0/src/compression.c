@@ -219,6 +219,17 @@ struct vector *vector_delete(struct vector *v) {
     return NULL;
 }
 
+void vector_print(struct vector const *v, void (*pf)(void const *v)) {
+    assert(v);
+    assert(pf);
+    printf("[");
+    for (size_t i = 0; i < v->size; i++) {
+        pf(v->elems + i * v->elem_size);
+        if (i != v->size - 1) printf(", ");
+    }
+    printf("]\n");
+}
+
 // --------------------------------------------------------- //
 
 struct set *set_new(size_t capacity);
@@ -302,8 +313,17 @@ typedef struct _last_entry {
     unsigned data;
 } LastEntry;
 
+typedef struct _encode {
+    unsigned data;
+    Set *encoding;
+} Encode;
+
 int heap_formatter(void *a, void *b) {
     return (*((Entry **)b))->weight - (*((Entry **)a))->weight;
+}
+
+int dict_comparator(const void *a, const void *b) {
+    return *((unsigned *)a) - *((unsigned *)b);
 }
 
 unsigned *count_chunks(const char *text_buffer, size_t text_size,
@@ -321,65 +341,68 @@ unsigned *count_chunks(const char *text_buffer, size_t text_size,
     return valve;
 }
 
-typedef struct _encode {
-    unsigned data;
-    Set *encoding;
-} Encode;
-
-void create_dictionary(Vector *dictionary, Vector *data, Entry *root,
-                       Set *encoding, unsigned length) {
-    if (vector_contains(data, root)) {
+void create_dictionary(Vector *dictionary, Vector *entries, Vector *data,
+                       size_t actual_size, unsigned index, Set *encoding,
+                       unsigned length) {
+    if (index < actual_size) {
         Set *encoded = set_new(length);
         memcpy(encoded->array, encoding->array, length / 8 + 1);
-        Encode encode = {((void *)root) - data->elems, encoded};
+        Encode encode = {index, encoded};
+        // printf("• dictionary record for '%c' – %d\n",
+        //        *((char *)data->elems + index * data->elem_size),
+        //        encoded->array[0]);
         vector_push(dictionary, &encode);
         return;
     }
 
+    Entry *entry = entries->elems + (index - actual_size) * entries->elem_size;
+
     set_erase(encoding, length);
-    create_dictionary(dictionary, data, root->left, encoding, length + 1);
+    create_dictionary(dictionary, entries, data, actual_size, entry->left,
+                      encoding, length + 1);
     set_insert(encoding, length);
-    create_dictionary(dictionary, data, root->right, encoding, length + 1);
+    create_dictionary(dictionary, entries, data, actual_size, entry->right,
+                      encoding, length + 1);
 }
 
 Set *search_dictionary(Vector *dictionary, Vector *data, void *target) {
-    unsigned left = 0, right = vector_size(dictionary) - 1;
+    unsigned left = 0, right = vector_size(dictionary);
 
-    while (true) {
+    printf("--- SEARCH DICTIONARY ---\n");
+
+    printf("Trying to find '%c%c'...\n", *((char *)target),
+           *((char *)target + 1));
+
+    while (right - left > 0) {
         unsigned index = (left + right) / 2;
-        if (memcmp()) }
+        Encode *encode = dictionary->elems + index * dictionary->elem_size;
+        printf(
+            "• iteration: right – %u, left – %u, index – %u, occured - "
+            "'%c%c'\n ",
+            right, left, index,
+            *((char *)data->elems + encode->data * data->elem_size),
+            *((char *)data->elems + encode->data * data->elem_size + 1));
+        int comparison = memcmp(data->elems + encode->data * data->elem_size,
+                                target, data->elem_size);
+        if (comparison > 0) {
+            right = index;
+        } else if (comparison < 0) {
+            left = index;
+        } else {
+            return encode->encoding;
+        }
+    }
+    return NULL;
 }
 
-char *compress(const char *text_buffer, size_t text_size,
-               size_t *compressed_size) {
-    printf("--- COMPRESSOR ---\n");
-    size_t chunk_size = 1, chunk_capacity = 1 << (chunk_size << 3);
-
-    printf("Compressing string: %s\n", text_buffer);
-    printf("Chunk size: %zu\n", chunk_size);
-    printf("Alphabet size: %zu\n", chunk_capacity);
-    Vector *actual_data = vector_new(0, chunk_size);
-    Vector *last_entries = vector_new(0, sizeof(LastEntry));
-    unsigned *chunks =
-        count_chunks(text_buffer, text_size, chunk_size, chunk_capacity);
-    printf("Counting symbols...\n");
-    for (size_t data = 0; data < chunk_capacity; data++) {
-        if (!chunks[data]) continue;
-        printf("• symbol '%c', occured %u times\n", (char)data, chunks[data]);
-        vector_push(actual_data, &data);
-        LastEntry entry = {chunks[data], vector_size(actual_data) - 1};
-        vector_push(last_entries, &entry);
-    }
-    free(chunks);
-
-    size_t actual_capacity = vector_size(actual_data);
-    printf("Actual alphabet size: %zu\n", actual_capacity);
-
+Entry *haffman(Vector *entries, Vector *bottom_entries,
+               size_t actual_capacity) {
+    // Pour bottom entries to heap
     Heap *heap = heap_create(sizeof(void *), actual_capacity, heap_formatter);
     for (size_t index = 0; index < actual_capacity; index++) {
         LastEntry *entry =
-            last_entries->elems + index * last_entries->elem_size;
-        printf("• entry data %u, weight %u\n", entry->data, entry->weight);
+            bottom_entries->elems + index * bottom_entries->elem_size;
+        // printf("• entry data %u, weight %u\n", entry->data, entry->weight);
         heap_insert(heap, &entry);
     }
 
@@ -388,8 +411,7 @@ char *compress(const char *text_buffer, size_t text_size,
     printf("Peek weight: %u\n", peek->weight);
     printf("Peek data: %u\n", peek->data);
 
-    Vector *entries = vector_new(0, sizeof(Entry));
-    vector_resize(entries, vector_size(last_entries));
+    vector_resize(entries, actual_capacity);
     entries->size = 0;
 
     while (heap->size > 1) {
@@ -398,49 +420,177 @@ char *compress(const char *text_buffer, size_t text_size,
         heap_pop(heap, &b);
         Entry new;
         new.weight = a->weight + b->weight;
-        new.left = vector_contains(last_entries, a)
+        new.left = vector_contains(bottom_entries, a)
                        ? a->data
                        : actual_capacity + ((((void *)a) - entries->elems) /
                                             entries->elem_size);
-        new.right = vector_contains(last_entries, b)
+        new.right = vector_contains(bottom_entries, b)
                         ? b->data
                         : actual_capacity + ((((void *)b) - entries->elems) /
                                              entries->elem_size);
-        printf("• merging entries: (%u, %u) and (%u, %u)\n", a->weight,
-               new.left, b->weight, new.right);
+        // printf("• merging entries: (%u, %u) and (%u, %u)\n", a->weight,
+        //        new.left, b->weight, new.right);
         vector_push(entries, &new);
         Entry *in_vector =
             entries->elems + (entries->size - 1) * entries->elem_size;
         heap_insert(heap, &in_vector);
     }
-    vector_delete(last_entries);
 
     Entry *result;
     heap_peek(heap, &result);
     heap_destroy(heap);
+    return result;
+}
 
-    printf("%u\n", result->weight);
+// encode text from text_buffer using dictionary
+Set *encode(const char *text_buffer, size_t chunk_size, size_t text_size,
+            Vector *dictionary, Vector *data) {
+    printf("--- ENCODE ---\n");
+    Set *bits = set_new(text_size * 8);
+    size_t counter = 0;
+    for (size_t chunk = 0; chunk < text_size; chunk += chunk_size) {
+        Set *temp =
+            search_dictionary(dictionary, data, (void *)text_buffer + chunk);
+        for (size_t bit = 0; bit < temp->capacity; bit++) {
+            if (set_find(temp, bit)) set_insert(bits, counter);
+            counter++;
+        }
+        // printf("• encoding chunk #%zu\n", chunk);
+    }
+    bits->capacity = counter;
+    return bits;
+}
 
-    Vector *encoding = vector_new(0, sizeof(Encode));
+char *compress(const char *text_buffer, size_t text_size,
+               size_t *compressed_size) {
+    printf("--- COMPRESSOR ---\n");
+    size_t chunk_size = 2, chunk_capacity = 1 << (chunk_size << 3);
 
-    void *compressed = NULL;
+    // printf("Compressing string: %s\n", text_buffer);
+    printf("Chunk size: %zu\n", chunk_size);
+    printf("Alphabet size: %zu\n", chunk_capacity);
+    Vector *actual_data = vector_new(0, chunk_size);
+    Vector *bottom_entries = vector_new(0, sizeof(LastEntry));
+    Vector *entries = vector_new(0, sizeof(Entry));
+    unsigned *chunks =
+        count_chunks(text_buffer, text_size, chunk_size, chunk_capacity);
+    printf("Counting symbols...\n");
+    for (size_t data = 0; data < chunk_capacity; data++) {
+        if (!chunks[data]) continue;
+        printf("• symbol '%c%c', occured %u times\n", *((char *)&data),
+               *((char *)&data + 1), chunks[data]);
+        vector_push(actual_data, &data);
+        LastEntry entry = {chunks[data], vector_size(actual_data) - 1};
+        vector_push(bottom_entries, &entry);
+    }
+    free(chunks);
+
+    size_t actual_capacity = vector_size(actual_data);
+    printf("Actual alphabet size: %zu\n", actual_capacity);
+
+    haffman(entries, bottom_entries, actual_capacity);
+    bottom_entries = vector_delete(bottom_entries);
+    // printf("%u\n", result->weight);
+
+    Vector *dictionary = vector_new(0, sizeof(Encode));
+
+    Set *temp = set_new(512);
+    create_dictionary(dictionary, entries, actual_data, actual_capacity,
+                      actual_capacity + vector_size(entries) - 1, temp, 0);
+    set_delete(temp);
+    qsort(dictionary->elems, vector_size(dictionary), dictionary->elem_size,
+          dict_comparator);
+    printf("[");
+    for (size_t i = 0; i < vector_size(dictionary); i++) {
+        Encode encode;
+        vector_get(dictionary, i, &encode);
+        // printf(
+        //     "%c%c",
+        //     *(actual_data->elems + encode.data * actual_data->elem_size),
+        //     *(actual_data->elems + encode.data * actual_data->elem_size +
+        //     1));
+    }
+    printf("]\n");
+
+    printf("Created dictionary with size: %zu\n", vector_size(dictionary));
+
+    Set *encoded =
+        encode(text_buffer, chunk_size, text_size, dictionary, actual_data);
+
+    printf("Encoded/decoded length – %zu/%zu\n", encoded->capacity,
+           text_size * 8);
+
+    // copy everything to buffer
+    size_t data_size = actual_data->size * actual_data->elem_size,
+           heap_size = entries->size * entries->elem_size,
+           encoded_size = encoded->capacity / 8 + 1, number_of_secitons = 3,
+           section_size = sizeof(unsigned);
+    size_t copied = 0;
+    void *compressed = malloc(data_size + heap_size + encoded_size +
+                              section_size * number_of_secitons);
+    // copy the chunk size
+    memcpy(compressed + copied, &chunk_size, section_size);
+    copied += section_size;
+    // copy the data
+    memcpy(compressed + copied, &data_size, section_size);
+    copied += section_size;
+    memcpy(compressed, actual_data->elems, data_size);
+    copied += data_size;
+    // copy the heap
+    memcpy(compressed + copied, &heap_size, section_size);
+    copied += section_size;
+    memcpy(compressed, entries->elems, heap_size);
+    copied += heap_size;
+    // copy the encoded string
+    memcpy(compressed + copied, &encoded_size, section_size);
+    copied += section_size;
+    memcpy(compressed + copied, encoded->array, encoded_size);
+    copied += encoded_size;
+
+    printf("--- SUMMARY ---\n");
+    printf("----------------------------------------------------------\n");
+    printf("| chunk_size | heap_size | heap | encoded_size | encoded |\n");
+    printf("----------------------------------------------------------\n");
+    printf("| %10zu | %9zu | %4zu | %12zu | %7zu |\n", section_size,
+           section_size, data_size + heap_size, section_size, encoded_size);
+    printf("----------------------------------------------------------\n");
+
+    *compressed_size = copied;
 
     return compressed;
 }
 
 // char *decompress(const char *compressed_data, size_t compressed_size,
 //                  size_t *uncompressed_size) {
-//     size_t out_size = *(size_t *)compressed_data;
-//     char *out = (char *)malloc(out_size);
-//     memcpy(out, compressed_data + sizeof(size_t), out_size);
-//     *uncompressed_size = out_size;
-//     return out;
+//     typedef struct _section {
+//         unsigned size;
+//         void *section;
+//     } Section;
+
+//     printf("--- DECOMPRESSOR ---\n");
+
+//     size_t data_size, heap_size, encoded_size, section_size =
+//     sizeof(unsigned); size_t scanned = 0; memcpy(&data_size, compressed_data
+//     + scanned, section_size); scanned += section_size; const char *data =
+//     compressed_data + scanned; scanned += data_size; memcpy(&heap_size,
+//     compressed_data + scanned, section_size); scanned += section_size; void
+//     *heap;
 // }
 
 int main() {
-    char *text = strdup("abra shvabra cadabra");
+    FILE *input = fopen("input.txt", "r");
+    Vector *text = vector_new(0, sizeof(char));
+    char c;
+    while ((c = fgetc(input)) > 0) {
+        vector_push(text, &c);
+    }
     size_t compressed_size;
-    char *compressed_text = compress(text, strlen(text), &compressed_size);
+    size_t non_compressed_size = strlen(text->elems);
+    char *compressed_text =
+        compress(text->elems, strlen(text->elems), &compressed_size);
+    printf("Compressed/non-compressed – %zu/%zu (-%0.1f%%)\n", compressed_size,
+           non_compressed_size,
+           ((float)compressed_size) / non_compressed_size * 100);
 
     // size_t uncompressed_size;
     // char *uncompressed_text =

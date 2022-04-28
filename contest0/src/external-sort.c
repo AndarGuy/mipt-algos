@@ -247,12 +247,8 @@ void extern_sort() {
 }
 
 int main() {
-    // clock_t timer = clock();
-
+    
     extern_sort();
-
-    // printf("Time taken: %.4fs\n", (double)(clock() - timer) /
-    // CLOCKS_PER_SEC);
 
     return 0;
 }
