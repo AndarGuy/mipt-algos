@@ -7,7 +7,7 @@ EXECUTABLES=$(patsubst $(SRC_DIR)/%,$(OBJ_DIR)/%,$(SRCS:.c=))
 
 CC=cc
 
-CFLAGS=-Wall
+CFLAGS=-O2 -Wall -Werror -lm
 
 .PHONY: fclean clean all
 
