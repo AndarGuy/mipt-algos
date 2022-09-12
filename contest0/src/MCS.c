@@ -16,37 +16,57 @@
 
 #define MAX 30000
 
-int mcs(char *stringA, char *stringB, unsigned long lengthA, unsigned long lengthB) {
-    int *cache = calloc(MAX, sizeof(int));
-    for (size_t i = 0; i < lengthA; i++)
-    {
-        for (size_t j = 0; j < lengthB; j++)
-        {
-            int k = cache[j];
-            while (k > 0 && stringA[i] != stringA[k]) k = cache[k];
-            if (stringA[i] == stringB[k]) k++;
-            cache[i] = k;
-            printf("%d\n", k);
+void mcs(char *stringA, char *stringB, size_t lengthA, size_t lengthB) {
+    char *max = stringA;
+    int maxLength = 0;
+
+    for (size_t i = 0; i < lengthA; i++) {
+        int streak = 0;
+        for (size_t j = i, k = 0; j < lengthA && k < lengthB; j++, k++) {
+            if (stringA[j] == stringB[k]) {
+                streak++;
+                char *current = stringA + j - streak + 1;
+                if (streak > maxLength) {
+                    maxLength = streak;
+                    max = current;
+                } else if (streak == maxLength)
+                    if (memcmp(max, current, streak) > 0) max = current;
+            } else
+                streak = 0;
         }
-        
     }
-    return 0;
-    
+
+    for (size_t i = 1; i < lengthB; i++) {
+        int streak = 0;
+        for (size_t j = 0, k = i; j < lengthA && k < lengthB; j++, k++) {
+            if (stringA[j] == stringB[k]) {
+                streak++;
+                char *current = stringA + j - streak + 1;
+                if (streak > maxLength) {
+                    maxLength = streak;
+                    max = current;
+                } else if (streak == maxLength) {
+                    if (memcmp(max, current, streak) > 0) max = current;
+                }
+            } else
+                streak = 0;
+        }
+    }
+
+    max[maxLength] = 0;
+    printf("%s\n", max);
 }
 
 int main() {
-
-    char *stringA = calloc(MAX, sizeof(char)), *stringB = calloc(MAX, sizeof(char));
+    char *stringA = calloc(MAX + 1, sizeof(char)), *stringB = calloc(MAX + 1, sizeof(char));
     scanf("%s%s", stringA, stringB);
-    unsigned long lengthA = strlen(stringA), lengthB = strlen(stringB);
-    
+    size_t lengthA = strlen(stringA), lengthB = strlen(stringB);
     mcs(stringA, stringB, lengthA, lengthB);
-
     return 0;
 }
 
 /*
 
-
+F[x][y] = F[x - 1][y - 1] + 1 если s1[x] == s2[y], иначе 0;
 
 */
