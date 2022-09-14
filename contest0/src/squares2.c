@@ -12,47 +12,58 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX 10000 + 1
+#define BOUND 10000 + 1
+#define NEG(x) -(x)
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+#define MAX(x, y) NEG(MIN(NEG(x), NEG(y)))
 
-int squares2(int N, int *cache) {
+int squares2(int N, int **cache) {
     int max = 0;
-
-    for (size_t i = 0; i < N; i++) {
-        for (size_t j = 0; j < N; j++) {
-            scanf("%d", &cache[i][j]);
+    for (size_t i = 1; i < N; i++)
+    {
+        for (size_t j = 1; j < N; j++)
+        {
+            if (cache[i][j] > 0) {
+                cache[i][j] = MIN(MIN(cache[i - 1][j], cache[i][j - 1]), cache[i - 1][j - 1]) + 1;
+                max = MAX(max, cache[i][j]);
+            }
         }
+        
     }
-
-    return cache[N] = min + 1;
+    
+    return max;
 }
 
 int main() {
     int N;
     scanf("%d", &N);
-    int **cache = calloc(MAX, sizeof(int *));
+    int **cache = calloc(BOUND, sizeof(int *));
     for (size_t i = 0; i < N; i++) {
-        cache[i] = calloc(MAX, sizeof(int));
+        cache[i] = calloc(BOUND, sizeof(int));
     }
 
     for (size_t i = 0; i < N; i++) {
         for (size_t j = 0; j < N; j++) {
             scanf("%d", &cache[i][j]);
         }
-    }
-
-    for (size_t i = 2; i < N; i++) {
-        squares(i, cache);
     }
 
     int result = squares2(N, cache);
 
     printf("%d\n", result);
 
+    // for (size_t i = 0; i < N; i++) {
+    //     for (size_t j = 0; j < N; j++) {
+    //         printf("%d ", cache[i][j]);
+    //     }
+    //     printf("\n");
+    // }
+
     return 0;
 }
 
 /*
 
-f(x) = f(x - 1) + f(x - 2) + f(x - 3) + f(x - 4) + f(x - 5) + f(x - 6)
+f(x, y) = min(f(x - 1, y), f(x, y - 1), f(x - 1, y - 1)) + 1
 
 */
