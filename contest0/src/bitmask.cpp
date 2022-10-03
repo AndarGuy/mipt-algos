@@ -9,56 +9,68 @@
 */
 
 #include <iostream>
-#include <map>
+#include <unordered_map>
 
-int bitmask(uint64_t mask, int N, int M, uint64_t bricks[64][4], std::map<uint64_t, int> masks) {
-    std::map<uint64_t, int>::iterator search = masks.find(mask);
-    if (search != masks.end()) return search->second;
+uint32_t bitmask(uint64_t mask, int N, int M, uint64_t bricks[64][4], std::unordered_map<uint64_t, uint32_t> &masks) {
+    if (masks.find(mask) != masks.end()) {
+        // std::cout << "НАШЕЛ! " << mask << std::endl;
+        return masks[mask];
+    }
 
-    int leftmost = __builtin_clzll(mask);
+    // std::cout << std::bitset<16>(mask) << std::endl;
+
+    int leftmost = 63 - __builtin_clzll(mask);
     int i = leftmost / M;
     int j = leftmost % M;
-    int result = 0;
-    if (j + 2 < M) {
+    // std::cout << leftmost << ' ' << i << ' ' << j << std::endl;
+    // for (size_t i = 0; i < 4; i++) {
+    //     std::cout << std::bitset<16>(bricks[leftmost][i]) << std::endl;
+    // }
+
+    uint32_t result = 0;
+    if (j > 0) {
         uint64_t brick = bricks[leftmost][0];
-        if ((brick & mask) == brick) result += bitmask(mask - brick, N, M, bricks, masks);
+        if (brick && (brick & mask) == brick) result += bitmask(mask - brick, N, M, bricks, masks);
     }
-    if (j + 3 < M) {
+    if (j - 1 > 0) {
         uint64_t brick = bricks[leftmost][1];
-        if ((brick & mask) == brick) result += bitmask(mask - brick, N, M, bricks, masks);
+        if (brick && (brick & mask) == brick) result += bitmask(mask - brick, N, M, bricks, masks);
     }
-    if (i + 2 < N) {
+    if (i > 0) {
         uint64_t brick = bricks[leftmost][2];
-        if ((brick & mask) == brick) result += bitmask(mask - brick, N, M, bricks, masks);
+        if (brick && (brick & mask) == brick) result += bitmask(mask - brick, N, M, bricks, masks);
     }
-    if (i + 3 < N) {
+    if (i - 1 > 0) {
         uint64_t brick = bricks[leftmost][3];
-        if ((brick & mask) == brick) result += bitmask(mask - brick, N, M, bricks, masks);
+        if (brick && (brick & mask) == brick) result += bitmask(mask - brick, N, M, bricks, masks);
     }
 
     return masks[mask] = result;
 }
 
 int main(int argc, char *argv[]) {
-    std::map<uint64_t, int> masks;
+    for (size_t N = 1; N < 10; N++) {
+        for (size_t M = 1; M < 10; M++) {
+            if (N * M > 63) continue;
+            std::unordered_map<uint64_t, uint32_t> masks;
+            masks[0] = 1;
 
-    int N, M;
-    std::cin >> N >> M;
+            uint64_t bricks[64][4] = {0};
 
-    uint64_t bricks[64][4];
+            bricks[1][0] = 3ull;
+            bricks[2][1] = 7ull;
+            bricks[M][2] = 1ull + (1ull << M);
+            bricks[M + M][3] = bricks[M][2] + (1ull << (M + M));
 
-    bricks[0][0] = 0b11;
-    bricks[0][1] = 0b111;
-    bricks[0][2] = 0b1 + (0b1 >> M);
-    bricks[0][3] = bricks[0][2] + (0b1 >> (M + M));
+            for (size_t i = 2; i < 64; i++) bricks[i][0] = bricks[i - 1][0] << 1;
+            for (size_t i = 3; i < 64; i++) bricks[i][1] = bricks[i - 1][1] << 1;
+            for (size_t i = M + 1; i < 64; i++) bricks[i][2] = bricks[i - 1][2] << 1;
+            for (size_t i = M + M + 1; i < 64; i++) bricks[i][3] = bricks[i - 1][3] << 1;
 
-    for (size_t i = 1; i < N * M; i++) {
-        for (size_t k = 0; k < 4; k++) {
-            bricks[i][k] = bricks[i - 1][k] >> 1;
+            uint64_t mask = (1ull << N * M) - 1;
+            std::cout << bitmask(mask, N, M, bricks, masks) << std::endl;
         }
     }
-
-    std::cout << bitmask(UINT64_MAX, N, M, bricks, masks);
 
     return 0;
 }
